@@ -144,6 +144,5 @@
 **.mov
 **.mp4
 
-# Added by cargo
-
-/target
+# Specific
+!src/index.html

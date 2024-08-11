@@ -2,16 +2,24 @@
 name = "pdf-live-server"
 version = "0.0.0"
 edition = "2021"
+description = "Serve a PDF live while watching for changes and reloading the browser."
+author = ["Steven Hé (Sīchàng) <stevensichanghe@gmail.com>"]
+repository = "https://github.com/SichangHe/pdf-live-server"
+license = "MIT"
 
 [dependencies]
 anyhow = { version = "1.0.86", features = ["backtrace"] }
 axum = { version = "0.7", features = ["ws"] }
 clap = { version = "4", features = ["derive"] }
 drop_this = "0.0.0"
-notify = "*"
+notify = "6"
 notify-debouncer-mini = "0.4"
 tokio = { version = "1", features = ["rt"] }
-tower = "*"
-tower-http = { version = "*", features = ["fs"] }
+tower = "0"
+tower-http = { version = "0", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
