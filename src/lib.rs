@@ -1,6 +1,7 @@
-    use axum::{
+use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    response::{Html, Response},
+    http::header,
+    response::{Html, IntoResponse, Response},
     routing::get,
     Extension, Router,
 };
@@ -44,6 +45,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(serve_html))
+        .route("/main.mjs", get(serve_js))
         .route("/__pdf_live_server_ws", get(ws_handler))
         .nest_service("/served.pdf", ServeFile::new(served_pdf))
         .layer(ServiceBuilder::new().layer(Extension(tx)));
@@ -55,33 +57,13 @@ pub async fn run() -> anyhow::Result<()> {
 }
 
 async fn serve_html() -> Html<&'static str> {
-    Html(
-        r#"
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PDF Live Viewer</title>
-<style>
-    body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-    iframe { border: none; width: 100%; height: 100%; }
-</style>
-</head>
-<body>
-<iframe id="pdfViewer"></iframe>
-<script>
-    // Append a timestamp to force reload
-    const iframe = document.getElementById('pdfViewer');
-    const timestamp = new Date().getTime();
-    iframe.src = `served.pdf?cacheBust=${timestamp}`;
+    Html(include_str!("index.html"))
+}
 
-    const wsAddress = `ws://${location.host}/__pdf_live_server_ws`;
-    const web_socket = new WebSocket(wsAddress);
-    web_socket.onmessage = () => location.reload();
-</script>
-</body>
-</html>
-"#,
+async fn serve_js() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        include_str!("main.mjs"),
     )
 }
 
