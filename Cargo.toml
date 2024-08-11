@@ -1,0 +1,17 @@
+[package]
+name = "pdf-live-server"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { version = "1.0.86", features = ["backtrace"] }
+axum = { version = "0.7", features = ["ws"] }
+clap = { version = "4", features = ["derive"] }
+drop_this = "0.0.0"
+notify = "*"
+notify-debouncer-mini = "0.4"
+tokio = { version = "1", features = ["rt"] }
+tower = "*"
+tower-http = { version = "*", features = ["fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
