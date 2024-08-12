@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Live Viewer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.mjs" type="module"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf_viewer.mjs" type="module"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf_viewer.min.css"
         integrity="sha512-dbJOtZ3VfH52HMyZ0hz6HcLVK0bESRU396ht5fz4EC6icMeT0MKSYxp6LoydBDaMUHiAGjnI9vA3hZRcCc2Fxw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -20,8 +21,9 @@
         }
 
         #pdfViewer {
-            transform: scale(25%);
-            transform-origin: top left;
+            position: absolute;
+            /* transform: scale(25%);
+            transform-origin: top left; */
         }
 
         canvas {
@@ -32,7 +34,9 @@
 </head>
 
 <body>
-    <div id="pdfViewer"></div>
+    <div id="pdfViewer">
+        <div id="viewer"></div>
+    </div>
     <script src="/main.mjs" type="module"></script>
 </body>
 

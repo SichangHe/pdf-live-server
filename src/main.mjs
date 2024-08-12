@@ -1,8 +1,15 @@
 const getUrl = () => `served.pdf?cacheBust=${new Date().getTime()}`;
 const scrollPositionKey = "pdf-live-server-preview-pos";
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.mjs";
-const scale = 4;
-const div = document.getElementById("pdfViewer");
+const container = document.getElementById("pdfViewer");
+const viewer = document.getElementById("viewer");
+const eventBus = new pdfjsViewer.EventBus();
+const pdfViewer = new pdfjsViewer.PDFViewer({
+    container,
+    viewer,
+    eventBus,
+});
+
 
 let loadNum = 0;
 let downloadTask = null;
@@ -27,25 +34,8 @@ async function loadPDF(currentLoadNum = loadNum, retries = 20) {
             console.log("Discarding outdated PDF.");
             return;
         }
-        const canvases = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const viewport = page.getViewport({ scale });
-            const canvas = document.createElement("canvas");
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            canvases.push(canvas);
-            const renderContext = {
-                canvasContext: canvas.getContext("2d"),
-                viewport,
-            };
-            await page.render(renderContext).promise;
-        }
+        pdfViewer.setDocument(pdf);
         console.log(`Rendered PDF in ${(new Date() - downloadTime) / 1000}s`);
-        div.innerHTML = "";
-        for (const canvas of canvases) {
-            div.appendChild(canvas);
-        }
         restoreScrollPosition();
     } catch (error) {
         if (retries > 0) {
@@ -57,10 +47,6 @@ async function loadPDF(currentLoadNum = loadNum, retries = 20) {
             setTimeout(() => loadPDF(currentLoadNum, retries - 1), 200);
         } else {
             console.error("Failed to load PDF after several attempts", error);
-        }
-    } finally {
-        if (pdf !== null) {
-            pdf.cleanup();
         }
     }
 }
