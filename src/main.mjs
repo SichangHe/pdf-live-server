@@ -27,24 +27,42 @@ async function loadPDF(currentLoadNum = loadNum, retries = 20) {
             console.log("Discarding outdated PDF.");
             return;
         }
-        const canvases = [];
+        const pageMaps = [];
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const viewport = page.getViewport({ scale });
             const canvas = document.createElement("canvas");
             canvas.width = viewport.width;
             canvas.height = viewport.height;
-            canvases.push(canvas);
+            const container = document.createElement("div");
+            container.classList.add("textLayer");
+            const pageDiv = document.createElement("div");
+            pageDiv.appendChild(canvas);
+            pageDiv.appendChild(container);
             const renderContext = {
                 canvasContext: canvas.getContext("2d"),
                 viewport,
             };
-            await page.render(renderContext).promise;
+            const renderPromise = page.render(renderContext).promise;
+            pageMaps.push({ page, viewport, pageDiv, container, renderPromise });
+        }
+        for (const { renderPromise } of pageMaps) {
+            if (currentLoadNum !== loadNum) {
+                console.log("Discarding outdated PDF.");
+                return;
+            }
+            await renderPromise;
         }
         console.log(`Rendered PDF in ${(new Date() - downloadTime) / 1000}s`);
         div.innerHTML = "";
-        for (const canvas of canvases) {
-            div.appendChild(canvas);
+        for (const { page, viewport, pageDiv, container } of pageMaps) {
+            div.appendChild(pageDiv);
+            const textLayer = new pdfjsLib.TextLayer({
+                textContentSource: page.streamTextContent(),
+                viewport,
+                container,
+            });
+            await textLayer.render();
         }
         restoreScrollPosition();
     } catch (error) {
