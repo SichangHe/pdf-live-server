@@ -37,6 +37,7 @@ async function loadPDF(currentLoadNum = loadNum, retries = 20) {
             const container = document.createElement("div");
             container.classList.add("textLayer");
             const pageDiv = document.createElement("div");
+            pageDiv.classList.add("container");
             pageDiv.appendChild(canvas);
             pageDiv.appendChild(container);
             const renderContext = {
@@ -58,7 +59,10 @@ async function loadPDF(currentLoadNum = loadNum, retries = 20) {
         for (const { page, viewport, pageDiv, container } of pageMaps) {
             div.appendChild(pageDiv);
             const textLayer = new pdfjsLib.TextLayer({
-                textContentSource: page.streamTextContent(),
+                textContentSource: page.streamTextContent({
+                    includeMarkedContent: true,
+                    disableNormalization: true,
+                }),
                 viewport,
                 container,
             });
