@@ -1,6 +1,6 @@
 [package]
 name = "pdf-live-server"
-version = "0.0.0"
+version = "0.0.1"
 edition = "2021"
 description = "Serve a PDF live while watching for changes and reloading the browser."
 repository = "https://github.com/SichangHe/pdf-live-server"
