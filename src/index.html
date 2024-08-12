@@ -10,6 +10,10 @@
         integrity="sha512-dbJOtZ3VfH52HMyZ0hz6HcLVK0bESRU396ht5fz4EC6icMeT0MKSYxp6LoydBDaMUHiAGjnI9vA3hZRcCc2Fxw=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
+        :root {
+            --scale-factor: 4;
+        }
+
         body,
         html,
         #pdfViewer {
@@ -20,13 +24,17 @@
         }
 
         #pdfViewer {
-            transform: scale(25%);
+            transform: scale(calc(1 / var(--scale-factor)));
             transform-origin: top left;
         }
 
         canvas {
             display: block;
             border-style: dotted;
+        }
+
+        .container {
+            position: relative;
         }
     </style>
 </head>
