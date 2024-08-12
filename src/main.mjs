@@ -7,7 +7,7 @@ const div = document.getElementById("pdfViewer");
 let loadNum = 0;
 let downloadTask = null;
 
-async function loadPDF(currentLoadNum = loadNum, retries = 20) {
+async function loadPDF(bytes = null, currentLoadNum = loadNum) {
     let pdf = null;
     if (currentLoadNum !== loadNum) {
         console.log("Cancelling outdated PDF download.");
@@ -19,7 +19,8 @@ async function loadPDF(currentLoadNum = loadNum, retries = 20) {
     }
     const startTime = new Date();
     try {
-        downloadTask = pdfjsLib.getDocument(getUrl());
+        let src = bytes == null ? getUrl() : bytes;
+        downloadTask = pdfjsLib.getDocument(src);
         pdf = await downloadTask.promise;
         const downloadTime = new Date();
         console.log(`Downloaded PDF in ${(downloadTime - startTime) / 1000}s`);
@@ -70,15 +71,12 @@ async function loadPDF(currentLoadNum = loadNum, retries = 20) {
         }
         restoreScrollPosition();
     } catch (error) {
-        if (retries > 0) {
-            if (error.message === "Worker was destroyed") {
-                console.log("PDF download cancelled.");
-                return;
-            }
-            console.error(`Failed to load PDF. Retrying... (${retries} retries left)`, error);
-            setTimeout(() => loadPDF(currentLoadNum, retries - 1), 200);
+        if (error.name === "InvalidPDFException") {
+            console.log("Discarding invalid PDF received.");
+        } else if (error.message === "Worker was destroyed") {
+            console.log("PDF download cancelled.");
         } else {
-            console.error("Failed to load PDF after several attempts", error);
+            throw error;
         }
     } finally {
         if (pdf !== null) {
@@ -107,10 +105,21 @@ await loadPDF();
 const wsAddress = `ws://${location.host}/__pdf_live_server_ws`;
 const webSocket = new WebSocket(wsAddress);
 
-webSocket.onmessage = () => {
+webSocket.onmessage = async (msg) => {
     saveScrollPosition();
     loadNum++;
-    loadPDF();
+    let bytes = msg.data;
+    if (bytes instanceof Blob) {
+        bytes = await bytes.arrayBuffer();
+    }
+    if (!(bytes instanceof ArrayBuffer)) {
+        console.error(
+            "I don't know what the do: the WebSocket data is neither Blob nor ArrayBuffer.",
+            bytes
+        );
+        bytes = null;
+    }
+    loadPDF(bytes);
 };
 
 document.addEventListener("scrollend", saveScrollPosition);

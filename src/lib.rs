@@ -1,3 +1,4 @@
+use anyhow::Result;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     http::header,
@@ -9,16 +10,22 @@ use clap::Parser;
 use drop_this::DropResult;
 use notify::RecommendedWatcher;
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
+use pdf_reading::PdfReader;
 use std::{
-    fs::metadata,
     net::SocketAddr,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
-use tokio::{net::TcpListener, sync::broadcast};
+use tokio::{
+    fs::{metadata, read},
+    net::TcpListener,
+    sync::watch,
+};
+use tokio_gen_server::prelude::*;
 use tower::ServiceBuilder;
-use tower_http::services::ServeFile;
-use tracing::{debug, error, info};
+use tracing::*;
+
+mod pdf_reading;
 
 /// Serve a PDF file live and reload the browser on changes.
 #[derive(Parser, Debug)]
@@ -36,23 +43,33 @@ struct Args {
     socket_addr: SocketAddr,
 }
 
-pub async fn run() -> anyhow::Result<()> {
-    let args = Args::parse();
-    let (tx, _) = broadcast::channel::<()>(100);
+type OptBytes = Option<Vec<u8>>;
 
-    let served_pdf = args.served_pdf.clone();
-    let _keep_debouncer_alive = start_watcher(args.watch_dir, args.served_pdf, tx.clone())?;
+pub async fn run() -> Result<()> {
+    let args = Args::parse();
+    let (tx, rx) = watch::channel::<OptBytes>(None);
+
+    let pdf_reader = PdfReader {
+        served_pdf: args.served_pdf.clone(),
+        tx: tx.clone(),
+        current_modified_time: None,
+    };
+    let (actor_handle, actor_ref) = pdf_reader.spawn();
+    let _keep_debouncer_alive = start_watcher(args.watch_dir, actor_ref.clone())?;
 
     let app = Router::new()
         .route("/", get(serve_html))
         .route("/main.mjs", get(serve_js))
         .route("/__pdf_live_server_ws", get(ws_handler))
-        .nest_service("/served.pdf", ServeFile::new(served_pdf))
-        .layer(ServiceBuilder::new().layer(Extension(tx)));
+        .route("/served.pdf", get(serve_pdf))
+        .layer(ServiceBuilder::new().layer(Extension(tx)))
+        .layer(ServiceBuilder::new().layer(Extension(rx)));
 
     let listener = TcpListener::bind(args.socket_addr).await?;
     info!("Starting to listen on {}.", args.socket_addr);
     axum::serve(listener, app).await?;
+    actor_ref.cancel();
+    actor_handle.await?.exit_result?;
     Ok(())
 }
 
@@ -66,18 +83,38 @@ async fn serve_js() -> impl IntoResponse {
         include_str!("main.mjs"),
     )
 }
+async fn serve_pdf(Extension(mut rx): Extension<watch::Receiver<OptBytes>>) -> impl IntoResponse {
+    let maybe_bytes = rx.borrow().clone();
+    let pdf_bytes = match maybe_bytes {
+        pdf_bytes @ Some(_) => pdf_bytes,
+        None => {
+            warn!("No PDF bytes to serve for the route yet. Waiting.");
+            await_pdf_bytes(&mut rx).await
+        }
+    }
+    .unwrap_or(b"We must be shutting down.".into());
+    ([(header::CONTENT_TYPE, "application/pdf")], pdf_bytes)
+}
+
+async fn await_pdf_bytes(rx: &mut watch::Receiver<OptBytes>) -> Option<Vec<u8>> {
+    match rx.changed().await {
+        Ok(_) => rx.borrow().clone(),
+        _ => None,
+    }
+}
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    Extension(tx): Extension<broadcast::Sender<()>>,
+    Extension(tx): Extension<watch::Sender<OptBytes>>,
 ) -> Response {
     ws.on_upgrade(move |socket| handle_socket(socket, tx.subscribe()))
 }
 
-async fn handle_socket(mut socket: WebSocket, mut rx: broadcast::Receiver<()>) {
+async fn handle_socket(mut socket: WebSocket, mut rx: watch::Receiver<OptBytes>) {
     debug!("Connected via WebSocket.");
-    while rx.recv().await.is_ok() {
-        if socket.send(Message::Text("reload".into())).await.is_err() {
+    while rx.changed().await.is_ok() {
+        let msg = Message::Binary(rx.borrow().clone().expect("Updates are all `Some`."));
+        if socket.send(msg).await.is_err() {
             break;
         }
         debug!("Sent message via WebSocket.");
@@ -89,20 +126,11 @@ pub const MS100: Duration = Duration::from_millis(100);
 
 fn start_watcher(
     watch_dir: PathBuf,
-    served_pdf: PathBuf,
-    tx: broadcast::Sender<()>,
+    actor_ref: ActorRef<PdfReader>,
 ) -> notify::Result<Debouncer<RecommendedWatcher>> {
-    let mut current_modified_time = modified_time(&served_pdf);
     let event_handler = move |event: notify::Result<Vec<DebouncedEvent>>| match event {
         Err(err) => error!(?err, "file watcher"),
-        _ => {
-            let new_modified_time = modified_time(&served_pdf);
-            if new_modified_time != current_modified_time {
-                current_modified_time = new_modified_time;
-                tx.send(()).drop_result();
-                info!(?served_pdf, "Notified about the change in modified time.");
-            }
-        }
+        _ => actor_ref.blocking_cast(()).drop_result(),
     };
 
     let mut debouncer = new_debouncer(MS100, event_handler)?;
@@ -110,12 +138,4 @@ fn start_watcher(
         .watcher()
         .watch(&watch_dir, notify::RecursiveMode::Recursive)?;
     Ok(debouncer)
-}
-
-fn modified_time(served_pdf: &Path) -> Option<SystemTime> {
-    (|| metadata(served_pdf)?.modified())()
-        .inspect_err(|err| {
-            error!(?err, ?served_pdf, "getting modified time");
-        })
-        .ok()
 }
